@@ -6,15 +6,14 @@ declare_id!("FNoE2JUhn981hBDyBMvWJYkw9DThhtYwWoPbw6wgz1rg");
 pub const SAKURA_MINT: Pubkey = pubkey!("EWiVNxCqNatzV2paBHyfKUwGLnk7WKs9uZTA5jkTpump");
 
 // TODO: Replace this with the actual mainnet Percolator Insurance Vault for the corresponding slab
-pub const PERCOLATOR_INSURANCE_VAULT: Pubkey = pubkey!("63juJmvm1XHCHveWv9WdanxqJX6tD6DLFTZD7dvH12dc");
+pub const PERCOLATOR_INSURANCE_VAULT: Pubkey =
+    pubkey!("63juJmvm1XHCHveWv9WdanxqJX6tD6DLFTZD7dvH12dc");
 
 pub const INSURANCE_BPS: u64 = 5000;
 pub const BURN_BPS: u64 = 5000;
 
-// Roughly 400ms per slot = ~2.5 slots per second = ~216,000 slots per day
-pub const DAILY_SLOTS: u64 = 216_000; 
-// 30 days subscription
-pub const SUBSCRIPTION_SLOTS: u64 = 30 * DAILY_SLOTS;
+// 30 days subscription in seconds
+pub const SUBSCRIPTION_TIME: i64 = 30 * 24 * 60 * 60;
 
 #[program]
 pub mod sakura_fee_router {
@@ -24,9 +23,13 @@ pub mod sakura_fee_router {
         // Enforce safe math constraints
         require!(INSURANCE_BPS + BURN_BPS == 10_000, ErrorCode::InvalidSplit);
         require!(amount > 0, ErrorCode::InvalidAmount);
-        
+
         // 1. Calculate splits (immutable BPS)
-        let insurance_amount = amount.checked_mul(INSURANCE_BPS).unwrap().checked_div(10_000).unwrap();
+        let insurance_amount = amount
+            .checked_mul(INSURANCE_BPS)
+            .unwrap()
+            .checked_div(10_000)
+            .unwrap();
         let burn_amount = amount.checked_sub(insurance_amount).unwrap();
 
         // 2. Route funds to the percolator insurance vault
@@ -53,15 +56,18 @@ pub mod sakura_fee_router {
         );
         token::burn(burn_ctx, burn_amount)?;
 
-        // 4. Update the on-chain Option B Subscription PDA
+        // 4. Update the on-chain Option B Subscription PDA using unix_timestamp
         let clock = Clock::get()?;
-        let current_slot = clock.slot;
+        let current_time = clock.unix_timestamp;
 
         let subscription = &mut ctx.accounts.subscription;
-        if subscription.expires_at_slot < current_slot {
-            subscription.expires_at_slot = current_slot.checked_add(SUBSCRIPTION_SLOTS).unwrap();
+        if subscription.expires_at < current_time {
+            subscription.expires_at = current_time.checked_add(SUBSCRIPTION_TIME).unwrap();
         } else {
-            subscription.expires_at_slot = subscription.expires_at_slot.checked_add(SUBSCRIPTION_SLOTS).unwrap();
+            subscription.expires_at = subscription
+                .expires_at
+                .checked_add(SUBSCRIPTION_TIME)
+                .unwrap();
         }
         subscription.user = ctx.accounts.user.key();
 
@@ -83,7 +89,10 @@ pub struct ProcessPayment<'info> {
 
     #[account(
         mut,
-        address = PERCOLATOR_INSURANCE_VAULT @ ErrorCode::InvalidVault
+        address = PERCOLATOR_INSURANCE_VAULT @ ErrorCode::InvalidVault,
+        constraint = insurance_vault.mint == SAKURA_MINT @ ErrorCode::InvalidVaultMint,
+        // The token program natively owns the token accounts
+        owner = token::ID @ ErrorCode::InvalidVaultOwner
     )]
     pub insurance_vault: Account<'info, TokenAccount>,
 
@@ -96,7 +105,7 @@ pub struct ProcessPayment<'info> {
     #[account(
         init_if_needed,
         payer = user,
-        space = 8 + 32 + 8, // discriminator + pubkey + u64
+        space = 8 + 32 + 8, // discriminator + pubkey + i64
         seeds = [b"subscription", user.key().as_ref()],
         bump
     )]
@@ -109,7 +118,7 @@ pub struct ProcessPayment<'info> {
 #[account]
 pub struct Subscription {
     pub user: Pubkey,
-    pub expires_at_slot: u64,
+    pub expires_at: i64,
 }
 
 #[error_code]
@@ -124,4 +133,8 @@ pub enum ErrorCode {
     InvalidMint,
     #[msg("Invalid insurance vault, must match the designated Percolator vault")]
     InvalidVault,
+    #[msg("Invalid insurance vault mint")]
+    InvalidVaultMint,
+    #[msg("Invalid insurance vault owner")]
+    InvalidVaultOwner,
 }
