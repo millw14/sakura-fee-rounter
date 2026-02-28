@@ -9,6 +9,8 @@ pub const SAKURA_MINT: Pubkey = pubkey!("EWiVNxCqNatzV2paBHyfKUwGLnk7WKs9uZTA5jk
 pub const PERCOLATOR_INSURANCE_VAULT: Pubkey =
     pubkey!("63juJmvm1XHCHveWv9WdanxqJX6tD6DLFTZD7dvH12dc");
 
+pub const PERCOLATOR_VAULT_AUTHORITY: Pubkey = pubkey!("11111111111111111111111111111111");
+
 pub const INSURANCE_BPS: u64 = 5000;
 pub const BURN_BPS: u64 = 5000;
 
@@ -61,14 +63,10 @@ pub mod sakura_fee_router {
         let current_time = clock.unix_timestamp;
 
         let subscription = &mut ctx.accounts.subscription;
-        if subscription.expires_at < current_time {
-            subscription.expires_at = current_time.checked_add(SUBSCRIPTION_TIME).unwrap();
-        } else {
-            subscription.expires_at = subscription
-                .expires_at
-                .checked_add(SUBSCRIPTION_TIME)
-                .unwrap();
-        }
+
+        let base_time = std::cmp::max(current_time, subscription.expires_at);
+        subscription.expires_at = base_time.checked_add(SUBSCRIPTION_TIME).unwrap();
+
         subscription.user = ctx.accounts.user.key();
 
         Ok(())
@@ -91,6 +89,8 @@ pub struct ProcessPayment<'info> {
         mut,
         address = PERCOLATOR_INSURANCE_VAULT @ ErrorCode::InvalidVault,
         constraint = insurance_vault.mint == SAKURA_MINT @ ErrorCode::InvalidVaultMint,
+        // The TokenAccount.owner field represents the SPL token authority over the vault
+        constraint = insurance_vault.owner == PERCOLATOR_VAULT_AUTHORITY @ ErrorCode::InvalidVaultAuthority,
         // The token program natively owns the token accounts
         owner = token::ID @ ErrorCode::InvalidVaultOwner
     )]
@@ -137,4 +137,6 @@ pub enum ErrorCode {
     InvalidVaultMint,
     #[msg("Invalid insurance vault owner")]
     InvalidVaultOwner,
+    #[msg("Invalid insurance vault authority")]
+    InvalidVaultAuthority,
 }
