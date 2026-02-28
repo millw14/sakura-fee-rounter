@@ -1,0 +1,20 @@
+{
+    "name": "sakura-crank-bot",
+    "version": "1.0.0",
+    "description": "Standalone NodeJS service that cranks the Percolator slab state periodically for Sakura.",
+    "main": "index.ts",
+    "scripts": {
+        "start": "ts-node index.ts"
+    },
+    "dependencies": {
+        "@solana/web3.js": "^1.90.0",
+        "dotenv": "^16.4.5"
+    },
+    "devDependencies": {
+        "@types/chai": "^5.2.3",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "^25.3.2",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.3"
+    }
+}
