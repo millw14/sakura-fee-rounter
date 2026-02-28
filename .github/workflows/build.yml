@@ -1,0 +1,52 @@
+name: Compile Sakura Fee Router
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.84.1
+          
+      - name: Cache Solana Toolchain
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.local/share/solana
+            ~/.cargo/bin/cargo-build-sbf
+            ~/.cargo/bin/cargo-test-sbf
+          key: ${{ runner.os }}-solana-1.18.23
+
+      - name: Install Solana
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.18.23/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install 0.30.1
+          avm use 0.30.1
+          echo "$HOME/.avm/bin" >> $GITHUB_PATH
+
+      - name: Build Anchor Program
+        run: |
+          cd programs/sakura_fee_router
+          cargo build-sbf
+        # We run the native build-sbf command inside the program dir because
+        # sometimes the global `anchor build` wrapper misidentifies workspace paths in CI
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: sakura_fee_router_so
+          path: target/deploy/sakura_fee_router.so
